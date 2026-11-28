@@ -1,0 +1,38 @@
+name: FrostAwake cloud install check
+on:
+  push:
+    branches: [codex/cloud-install-check-20261128]
+permissions: {}
+jobs:
+  clean-install:
+    runs-on: macos-15
+    timeout-minutes: 8
+    steps:
+      - name: Clone the public release and install
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          sw_vers
+          cd "$RUNNER_TEMP"
+          GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 \
+            git -c credential.helper= clone --branch v0.5.5 --depth 1 https://github.com/jin7933827109/FrostAwake.git
+          bash "$RUNNER_TEMP/FrostAwake/install.sh"
+          app="$HOME/Applications/FrostAwake.app"
+          codesign --verify --deep --strict "$app"
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Contents/Info.plist")" = 0.5.5
+          file "$app/Contents/MacOS/HingeFrost"
+          echo "Public clone, build, install to ~/Applications, and signature verification passed."
+      - name: Launch and read first-run settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          open "$HOME/Applications/FrostAwake.app"
+          state="$HOME/Library/Application Support/FrostAwake/Diagnostics/background-state.json"
+          for attempt in {1..25}; do
+            if [ -s "$state" ]; then break; fi
+            sleep 1
+          done
+          test -s "$state"
+          jq -e '.[-1] | {bundleVersion, controlVisible, autoFrostEnabled, launchAtLoginStatus, canPostInputEvents, sensorAvailable} | select(.bundleVersion == "26" and .autoFrostEnabled)' "$state"
+          echo "FrostAwake opened and reported its first-run settings."
